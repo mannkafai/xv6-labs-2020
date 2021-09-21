@@ -273,6 +273,7 @@ fork(void)
     release(&np->lock);
     return -1;
   }
+  np->trace = p->trace;
   np->sz = p->sz;
 
   np->parent = p;
