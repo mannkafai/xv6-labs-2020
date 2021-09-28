@@ -31,17 +31,17 @@ procinit(void)
   for(p = proc; p < &proc[NPROC]; p++) {
       initlock(&p->lock, "proc");
 
-      // Allocate a page for the process's kernel stack.
-      // Map it high in memory, followed by an invalid
-      // guard page.
-      char *pa = kalloc();
-      if(pa == 0)
-        panic("kalloc");
+      // // Allocate a page for the process's kernel stack.
+      // // Map it high in memory, followed by an invalid
+      // // guard page.
+      // char *pa = kalloc();
+      // if(pa == 0)
+      //   panic("kalloc");
       uint64 va = KSTACK((int) (p - proc));
-      kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
+      // kern_vmmap(p->kpagetable, va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
       p->kstack = va;
   }
-  kvminithart();
+  // kvminithart();
 }
 
 // Must be called with interrupts disabled,
@@ -121,6 +121,21 @@ found:
     return 0;
   }
 
+  // Allocate a stackframe page.
+  if((p->kstackframe = kalloc()) == 0){
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+
+  // An kernel page table.
+  p->kpagetable = kern_pagetable(p);
+  if(p->kpagetable == 0){
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+
   // Set up new context to start executing at forkret,
   // which returns to user space.
   memset(&p->context, 0, sizeof(p->context));
@@ -142,6 +157,12 @@ freeproc(struct proc *p)
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
+  if (p->kstackframe)
+    kfree((void *)p->kstackframe);
+  p->kstackframe = 0;
+  if (p->kpagetable)
+    kern_freepagetable(p);
+  p->kpagetable = 0;
   p->sz = 0;
   p->pid = 0;
   p->parent = 0;
@@ -150,6 +171,24 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+}
+
+pagetable_t
+kern_pagetable(struct proc *p)
+{
+  pagetable_t kpagetable = kern_kvminit();
+  if (kpagetable == 0)
+    return 0;
+
+  kern_vmmap(kpagetable, p->kstack, (uint64)p->kstackframe, PGSIZE, PTE_R | PTE_W);
+  return kpagetable;
+}
+
+void
+kern_freepagetable(struct proc *p)
+{
+  uvmunmap(p->kpagetable, p->kstack, 1, 0);
+  kvmfree(p->kpagetable);
 }
 
 // Create a user page table for a given process,
@@ -473,11 +512,15 @@ scheduler(void)
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+        kern_vminithart(p->kpagetable);
         swtch(&c->context, &p->context);
 
         // Process is done running for now.
         // It should have changed its p->state before coming back.
         c->proc = 0;
+
+        // use kernel_pagetable when no process is running.
+        kvminithart();
 
         found = 1;
       }
