@@ -104,13 +104,17 @@ sys_sigalarm(void)
   uint64 handler;
   if(argint(0, &interval) < 0 || argaddr(1, &handler) < 0)
     return -1;
-  myproc()->alarm_interval = interval;
-  myproc()->alarm_handler = handler;
+  struct proc* p = myproc();
+  p->alarm_interval = interval;
+  p->alarm_handler = handler;
   return 0;
 }
 
 uint64 sys_sigreturn(void)
 {
+  struct proc* p = myproc();
+  swicttrapframe(p->trapframe, &p->trap);
+  p->alarm_waitreturn = 0;
   return 0;
 }
 

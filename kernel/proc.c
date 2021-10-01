@@ -112,6 +112,13 @@ found:
     release(&p->lock);
     return 0;
   }
+  
+  // // Allocate a trapframe page.
+  // if((p->trap = (struct trapframe *)kalloc()) == 0){
+  //   freeproc(p);
+  //   release(&p->lock);
+  //   return 0;
+  // }
 
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
@@ -126,6 +133,7 @@ found:
   memset(&p->context, 0, sizeof(p->context));
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
+  p->alarm_interval = 0;
 
   return p;
 }
@@ -139,6 +147,9 @@ freeproc(struct proc *p)
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
+  // if(p->trap)
+  //   kfree((void*)p->trap);
+  // p->trap = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
@@ -150,6 +161,8 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+  p->alarm_interval = 0;
+  p->alarm_waitreturn = 0;
 }
 
 // Create a user page table for a given process,
@@ -696,4 +709,47 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+void 
+swicttrapframe(struct trapframe* to, struct trapframe* from)
+{
+  memmove(to, from, sizeof(struct trapframe));
+  // to->kernel_satp = from->kernel_satp;
+  // to->kernel_sp = from->kernel_sp;
+  // to->kernel_trap = from->kernel_trap;
+  // to->epc = from->epc;
+  // to->kernel_hartid = from->kernel_hartid;
+  // to->ra = from->ra;
+  // to->sp = from->sp;
+  // to->gp = from->gp;
+  // to->tp = from->tp;
+  // to->t0 = from->t0;
+  // to->t1 = from->t1;
+  // to->t1 = from->t1;
+  // to->t2 = from->t2;
+  // to->s0 = from->s0;
+  // to->s1 = from->s1;
+  // to->a0 = from->a0;
+  // to->a1 = from->a1;
+  // to->a2 = from->a2;
+  // to->a3 = from->a3;
+  // to->a4 = from->a4;
+  // to->a5 = from->a5;
+  // to->a6 = from->a6;
+  // to->a7 = from->a7;
+  // to->s2 = from->s2;
+  // to->s3 = from->s3;
+  // to->s4 = from->s4;
+  // to->s5 = from->s5;
+  // to->s6 = from->s6;
+  // to->s7 = from->s7;
+  // to->s8 = from->s8;
+  // to->s9 = from->s9;
+  // to->s10 = from->s10;
+  // to->s11 = from->s11;
+  // to->t3 = from->t3;
+  // to->t4 = from->t4;
+  // to->t5 = from->t5;
+  // to->t6 = from->t6;
 }
