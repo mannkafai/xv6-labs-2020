@@ -55,6 +55,7 @@ sys_sbrk(void)
 uint64
 sys_sleep(void)
 {
+  backtrace();
   int n;
   uint ticks0;
 
@@ -94,4 +95,16 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
+}
+
+void 
+backtrace(void)
+{
+  uint64 fp = r_fp();
+  uint64 up = PGROUNDUP(fp);
+  while (fp != up)
+  {
+    printf("%p\n", (void *)(*((uint64 *)(fp - 8))));
+    fp = *((uint64 *)(fp - 16));
+  }
 }
