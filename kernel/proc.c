@@ -173,24 +173,6 @@ freeproc(struct proc *p)
   p->state = UNUSED;
 }
 
-pagetable_t
-kern_pagetable(struct proc *p)
-{
-  pagetable_t kpagetable = kern_kvminit();
-  if (kpagetable == 0)
-    return 0;
-
-  kern_vmmap(kpagetable, p->kstack, (uint64)p->kstackframe, PGSIZE, PTE_R | PTE_W);
-  return kpagetable;
-}
-
-void
-kern_freepagetable(struct proc *p)
-{
-  uvmunmap(p->kpagetable, p->kstack, 1, 0);
-  kvmfree(p->kpagetable);
-}
-
 // Create a user page table for a given process,
 // with no user memory, but with trampoline pages.
 pagetable_t
@@ -259,6 +241,7 @@ userinit(void)
   // and data into it.
   uvminit(p->pagetable, initcode, sizeof(initcode));
   p->sz = PGSIZE;
+  procsyncpagetable(p, 0, p->sz);
 
   // prepare for the very first "return" from kernel to user.
   p->trapframe->epc = 0;      // user program counter
@@ -313,6 +296,8 @@ fork(void)
     return -1;
   }
   np->sz = p->sz;
+
+  procsyncpagetable(np, 0, np->sz);
 
   np->parent = p;
 
@@ -738,5 +723,28 @@ procdump(void)
       state = "???";
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
+  }
+}
+
+void 
+procsyncpagetable(struct proc *p, int from, int to)
+{
+  if (from <= to)
+  {
+    pte_t *pte;
+    pte_t *kpte;
+    for (int i = from; i < to; i += PGSIZE)
+    {
+      pte = walk(p->pagetable, i, 0);
+      kpte = walk(p->kpagetable, i, 1);
+      *kpte = *pte & ~PTE_U;
+    }
+  }
+  else
+  {
+    for (int i = from - PGSIZE; i >= to; i -= PGSIZE)
+    {
+      uvmunmap(p->kpagetable, i, 1, 0);
+    }
   }
 }
