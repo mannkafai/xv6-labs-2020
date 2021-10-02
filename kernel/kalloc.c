@@ -14,6 +14,10 @@ void freerange(void *pa_start, void *pa_end);
 extern char end[]; // first address after kernel.
                    // defined by kernel.ld.
 
+#define PHYSTART KERNBASE
+#define PAPN(pa) (((uint64)(pa)-PHYSTART) / PGSIZE)
+int papage_refs[(PHYSTOP - PHYSTART) / PGSIZE];
+
 struct run {
   struct run *next;
 };
@@ -22,6 +26,44 @@ struct {
   struct spinlock lock;
   struct run *freelist;
 } kmem;
+
+int
+papage_incref(uint64 pa)
+{
+  int ref = 0;
+  acquire(&kmem.lock);
+  int pn = PAPN(pa);
+  if (pa >= PHYSTOP || pa < PHYSTART || papage_refs[pn] < 1)
+    panic("papage incref");
+  papage_refs[pn]++;
+  ref = papage_refs[pn];
+  release(&kmem.lock);
+  return ref;
+}
+
+int
+papage_decref(uint64 pa)
+{
+  int ref = 0;
+  acquire(&kmem.lock);
+  int pn = PAPN(pa);
+  if (papage_refs[pn] < 1)
+    panic("papage decref");
+  papage_refs[pn]--;
+  ref = papage_refs[pn];
+  release(&kmem.lock);
+  return ref;
+}
+
+int
+papage_refnum(uint64 pa)
+{
+  int ref = 0;
+  acquire(&kmem.lock);
+  ref = papage_refs[PAPN(pa)];
+  release(&kmem.lock);
+  return ref;
+}
 
 void
 kinit()
@@ -36,7 +78,10 @@ freerange(void *pa_start, void *pa_end)
   char *p;
   p = (char*)PGROUNDUP((uint64)pa_start);
   for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE)
+  {
+    papage_refs[PAPN(p)] = 1;
     kfree(p);
+  }
 }
 
 // Free the page of physical memory pointed at by v,
@@ -50,6 +95,9 @@ kfree(void *pa)
 
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
+
+  if (papage_decref((uint64)pa) > 0)
+    return;
 
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
@@ -73,7 +121,13 @@ kalloc(void)
   acquire(&kmem.lock);
   r = kmem.freelist;
   if(r)
+  {
     kmem.freelist = r->next;
+    int pn = PAPN(r);
+    if (papage_refs[pn] != 0)
+      panic("kalloc ref");
+    papage_refs[pn] = 1;
+  }
   release(&kmem.lock);
 
   if(r)
