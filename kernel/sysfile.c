@@ -283,6 +283,41 @@ create(char *path, short type, short major, short minor)
   return ip;
 }
 
+// Create the path new as a sym link to the same inode as old.
+uint64
+sys_symlink(void)
+{
+  char target[MAXPATH], path[MAXPATH];
+  struct inode *dp, *ip;
+
+  if (argstr(0, target, MAXPATH) < 0 || argstr(1, path, MAXPATH) < 0)
+    return -1;
+
+  begin_op();
+  if ((ip = namei(target)) != 0)
+  {
+    if (ip->type == T_DIR)
+      goto bad;
+  }
+
+  if ((dp = create(path, T_SYMLINK, 0, 0)) == 0)
+  {
+    goto bad;
+  }
+
+  if (writei(dp, 0, (uint64)target, 0, MAXPATH) != MAXPATH)
+  {
+    panic("symlink");
+  }
+  iunlockput(dp);
+  end_op();
+  return 0;
+
+bad:
+  end_op();
+  return -1;
+}
+
 uint64
 sys_open(void)
 {
@@ -313,6 +348,31 @@ sys_open(void)
       iunlockput(ip);
       end_op();
       return -1;
+    }
+    if (omode != O_NOFOLLOW){
+      struct inode *dp;
+      int depth = 0;
+      for (depth = 0; depth < 10 && ip->type == T_SYMLINK; depth++){
+        if (readi(ip, 0, (uint64)path, 0, MAXPATH) == 0){
+          iunlockput(ip);
+          end_op();
+          return -1;
+        }
+        if ((dp = namei(path)) == 0){
+          iunlockput(ip);
+          end_op();
+          return -1;
+        }
+
+        iunlockput(ip);
+        ip = dp;
+        ilock(ip);
+      }
+      if (depth == 10){
+        iunlockput(ip);
+        end_op();
+        return -1;
+      }
     }
   }
 
