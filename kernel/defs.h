@@ -8,6 +8,7 @@ struct spinlock;
 struct sleeplock;
 struct stat;
 struct superblock;
+struct vma;
 
 // bio.c
 void            binit(void);
@@ -33,6 +34,12 @@ void            fileinit(void);
 int             fileread(struct file*, uint64, int n);
 int             filestat(struct file*, uint64 addr);
 int             filewrite(struct file*, uint64, int n);
+
+// vma.c
+void            vma_init(void);
+struct vma*     vma_alloc(void);
+void            vma_free(struct vma*);
+int             proc_pagefault_mmap(pagetable_t, uint64 va, uint64* pa);
 
 // fs.c
 void            fsinit(int);
@@ -105,6 +112,7 @@ void            yield(void);
 int             either_copyout(int user_dst, uint64 dst, void *src, uint64 len);
 int             either_copyin(void *dst, int user_src, uint64 src, uint64 len);
 void            procdump(void);
+int             proc_lazygrow(int);
 
 // swtch.S
 void            swtch(struct context*, struct context*);

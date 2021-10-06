@@ -5,6 +5,11 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "fcntl.h"
+#include "sleeplock.h"
+#include "vma.h"
+#include "fs.h"
+#include "file.h"
 
 struct cpu cpus[NCPU];
 
@@ -260,6 +265,14 @@ growproc(int n)
   return 0;
 }
 
+int 
+proc_lazygrow(int n)
+{
+  struct proc *p = myproc();
+  p->sz += n;
+  return 0;
+}
+
 // Create a new process, copying the parent.
 // Sets up child kernel stack to return as if from fork() system call.
 int
@@ -295,6 +308,17 @@ fork(void)
     if(p->ofile[i])
       np->ofile[i] = filedup(p->ofile[i]);
   np->cwd = idup(p->cwd);
+
+  for (i = 0; i < NOFILE; i++)
+  {
+    if (p->vma[i] == 0)
+      continue;
+    np->vma[i] = vma_alloc();
+    if (np->vma[i] == 0)
+      break;
+    memmove(np->vma[i], p->vma[i], sizeof(struct vma));
+    np->vma[i]->file = filedup(p->vma[i]->file);
+  }
 
   safestrcpy(np->name, p->name, sizeof(p->name));
 
@@ -343,6 +367,26 @@ exit(int status)
 
   if(p == initproc)
     panic("init exiting");
+
+  // Close all vma files.
+  for (int fd = 0; fd < NOFILE; fd++)
+  {
+    if (p->vma[fd])
+    {
+      struct vma *vma = p->vma[fd];
+      if ((vma->prot & PROT_WRITE) && vma->flags == MAP_SHARED)
+      {
+        begin_op();
+        ilock(vma->file->ip);
+        writei(vma->file->ip, 1, vma->addr, 0, vma->length);
+        iunlock(vma->file->ip);
+        end_op();
+      }
+      fileclose(vma->file);
+      vma_free(vma);
+      p->vma[fd] = 0;
+    }
+  }
 
   // Close all open files.
   for(int fd = 0; fd < NOFILE; fd++){

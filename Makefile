@@ -35,7 +35,9 @@ OBJS = \
   $K/sysfile.o \
   $K/kernelvec.o \
   $K/plic.o \
-  $K/virtio_disk.o
+  $K/virtio_disk.o \
+  $K/vma.o \
+  $K/sysvma.o \
 
 ifeq ($(LAB),pgtbl)
 OBJS += \
@@ -229,7 +231,10 @@ UPROGS += \
 	$U/_bigfile
 endif
 
-
+ifeq ($(LAB),mmap)
+UPROGS += \
+	$U/_mmaptest
+endif
 
 ifeq ($(LAB),net)
 UPROGS += \
